@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arena Showdown | Championship Edition</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { background: #09090b; color: #f4f4f5; font-family: 'Inter', sans-serif; overflow: hidden; }
+        .arena-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; height: 62vh; }
+        textarea { background: #111113; color: #fb923c; font-family: 'Fira Code', monospace; border: 1px solid #27272a; border-radius: 12px; outline: none; resize: none; width: 100%; height: 100%; padding: 15px; font-size: 11px; }
+        iframe { background: white; border-radius: 12px; width: 100%; height: 100%; border: none; }
+        .score-card { background: linear-gradient(180deg, #18181b 0%, #09090b 100%); border: 1px solid #27272a; }
+    </style>
+</head>
+<body class="p-4">
+
+    <div id="screen-connect" class="flex items-center justify-center min-h-screen">
+        <div class="bg-zinc-900 p-8 rounded-3xl w-full max-w-md shadow-2xl text-center border-t-4 border-orange-600">
+            <h1 class="text-3xl font-black mb-6 italic uppercase tracking-tighter">Arena Championship</h1>
+            <div class="mb-4 p-4 bg-black rounded-xl border border-zinc-800 text-orange-500 font-mono text-xs" id="my-id">Gerando ID...</div>
+            <input id="peer-id-input" type="text" placeholder="ID DO OPONENTE" class="w-full bg-black p-4 rounded-xl border border-zinc-800 text-center font-bold mb-4 outline-none uppercase text-white">
+            <button onclick="conectarAoAmigo()" class="w-full bg-orange-600 p-4 rounded-xl font-black uppercase hover:bg-orange-500 transition-all">CONECTAR</button>
+        </div>
+    </div>
+
+    <div id="screen-arena" class="hidden max-w-[1600px] mx-auto">
+        <header class="grid grid-cols-3 items-center mb-4 bg-zinc-900 p-4 rounded-2xl border border-zinc-800 shadow-xl">
+            <div class="flex items-center gap-4">
+                <div class="flex flex-col"><span class="text-[9px] text-zinc-500 font-black uppercase">Cronômetro</span><span id="timer" class="text-2xl font-black text-orange-500">05:00</span></div>
+                <div class="w-[1px] h-10 bg-zinc-800"></div>
+                <div class="flex flex-col"><span class="text-[9px] text-zinc-500 font-black uppercase">Desafio</span><span id="tema-display" class="text-sm font-bold text-white italic leading-tight uppercase">---</span></div>
+            </div>
+
+            <div class="flex justify-center items-center gap-4">
+                <div class="text-center">
+                    <p class="text-[8px] font-black text-zinc-500 uppercase mb-1">Você</p>
+                    <div id="my-score" class="text-3xl font-black px-4 py-1 bg-zinc-800 rounded-lg border border-zinc-700 text-white">0</div>
+                </div>
+                <span class="text-xl font-black text-zinc-700 mt-4">VS</span>
+                <div class="text-center">
+                    <p class="text-[8px] font-black text-zinc-500 uppercase mb-1">Oponente</p>
+                    <div id="opp-score" class="text-3xl font-black px-4 py-1 bg-zinc-800 rounded-lg border border-zinc-700 text-white">0</div>
+                </div>
+            </div>
+
+            <div class="flex justify-end gap-2">
+                <button id="btn-finish" onclick="finalizarDuelo()" class="bg-orange-600 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-orange-500 transition-all">ENTREGAR</button>
+                <button id="btn-judge" onclick="gerarVeredito()" class="hidden bg-blue-600 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-blue-500 italic">Julgar Round</button>
+                <button id="btn-reset" onclick="resetarJogo(true)" class="hidden bg-zinc-800 px-6 py-3 rounded-xl font-black text-xs uppercase hover:bg-zinc-700">Próximo Round</button>
+            </div>
+        </header>
+
+        <main class="arena-grid">
+            <div class="flex flex-col gap-2">
+                <textarea id="editor" oninput="updatePreview()"></textarea>
+                <div class="h-1/2 overflow-hidden border border-zinc-800 rounded-2xl shadow-xl"><iframe id="my-preview"></iframe></div>
+            </div>
+            <div class="flex flex-col gap-2 relative">
+                <div id="blind-overlay" class="absolute inset-0 bg-zinc-950 z-50 flex items-center justify-center text-zinc-700 font-black text-[10px] tracking-widest uppercase">Oponente no código...</div>
+                <div id="result-area" class="hidden flex flex-col gap-2 h-full">
+                    <div class="h-1/2 overflow-hidden border border-orange-500/20 rounded-2xl shadow-xl"><iframe id="opp-preview"></iframe></div>
+                    <div class="h-1/2 bg-black/40 rounded-2xl p-4 overflow-auto border border-zinc-800"><pre id="opp-code-raw" class="text-[10px] text-emerald-500 font-mono"></pre></div>
+                </div>
+            </div>
+        </main>
+
+        <div id="judge-panel" class="hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-full max-w-2xl bg-zinc-900 border border-zinc-700 p-6 rounded-2xl shadow-[0_0_60px_rgba(0,0,0,0.9)] z-[100] animate-bounce-short">
+            <div class="flex justify-between items-center mb-4 border-b border-zinc-800 pb-3">
+                <h2 class="font-black italic text-blue-400 uppercase tracking-widest">Resultado do Round</h2>
+                <span id="winner-tag" class="bg-orange-500 text-black px-3 py-1 rounded text-[10px] font-black">---</span>
+            </div>
+            <div class="grid grid-cols-2 gap-4 mb-4">
+                <div class="p-3 bg-black rounded-xl border border-zinc-800">
+                    <p class="text-[9px] text-zinc-500 font-bold uppercase mb-1">Sua Nota</p>
+                    <div id="my-grade" class="text-2xl font-black text-white">0.0</div>
+                </div>
+                <div class="p-3 bg-black rounded-xl border border-zinc-800">
+                    <p class="text-[9px] text-zinc-500 font-bold uppercase mb-1">Nota Oponente</p>
+                    <div id="opp-grade" class="text-2xl font-black text-white">0.0</div>
+                </div>
+            </div>
+            <p id="judge-comment" class="text-xs text-zinc-400 italic leading-relaxed"></p>
+        </div>
+    </div>
+
+    <script>
+        const temas = ["Card de Perfil Gamer", "Dashboard de Cripto", "Login Dark Futurista", "Menu de Restaurante Chic", "Widget de Música Neon"];
+        const initialHTML = `<!DOCTYPE html>\n<html>\n<head>\n<style>\n body { font-family: sans-serif; background: #eee; padding: 20px; }\n</style>\n</head>\n<body>\n <h1>Projeto Base</h1>\n <p>Boa sorte!</p>\n</body>\n</html>`;
+        
+        let peer = new Peer(), conn, timeLeft = 300, timerInterval;
+        let myCode = initialHTML, oppCode = "", iAmReady = false, opponentReady = false;
+        let myWins = 0, oppWins = 0;
+
+        peer.on('open', (id) => document.getElementById('my-id').innerText = "ID: " + id);
+        peer.on('connection', (c) => { conn = c; setupConn(); startRound(temas[Math.floor(Math.random()*temas.length)]); });
+
+        function conectarAoAmigo() {
+            conn = peer.connect(document.getElementById('peer-id-input').value.trim());
+            conn.on('open', () => { setupConn(); startRound(null); });
+        }
+
+        function setupConn() {
+            conn.on('data', (data) => {
+                if(data.type === 'START') { setTema(data.tema); resetUI(); }
+                if(data.type === 'FINISH') { opponentReady = true; oppCode = data.code; document.getElementById('opp-preview').srcdoc = oppCode; document.getElementById('opp-code-raw').innerText = oppCode; checkReveal(); }
+                if(data.type === 'RESET') resetUI();
+            });
+        }
+
+        function startRound(t) {
+            document.getElementById('screen-connect').classList.add('hidden');
+            document.getElementById('screen-arena').classList.remove('hidden');
+            if(t) { conn.send({ type: 'START', tema: t }); setTema(t); }
+            resetUI();
+        }
+
+        function setTema(t) { document.getElementById('tema-display').innerText = t; }
+
+        function startTimer() {
+            clearInterval(timerInterval); timeLeft = 300;
+            timerInterval = setInterval(() => {
+                timeLeft--;
+                let m = Math.floor(timeLeft/60), s = timeLeft%60;
+                document.getElementById('timer').innerText = `${m}:${s < 10 ? '0'+s : s}`;
+                if(timeLeft <= 0) finalizarDuelo();
+            }, 1000);
+        }
+
+        function updatePreview() { myCode = document.getElementById('editor').value; document.getElementById('my-preview').srcdoc = myCode; }
+
+        function finalizarDuelo() {
+            iAmReady = true; clearInterval(timerInterval);
+            document.getElementById('btn-finish').classList.add('hidden');
+            conn.send({ type: 'FINISH', code: myCode });
+            checkReveal();
+        }
+
+        function checkReveal() {
+            if(iAmReady && opponentReady) {
+                document.getElementById('blind-overlay').classList.add('hidden');
+                document.getElementById('result-area').classList.remove('hidden');
+                document.getElementById('btn-judge').classList.remove('hidden');
+                document.getElementById('btn-reset').classList.remove('hidden');
+            }
+        }
+
+        function gerarVeredito() {
+            const myStyleCount = (myCode.match(/style/g) || []).length + (myCode.match(/{/g) || []).length;
+            const oppStyleCount = (oppCode.match(/style/g) || []).length + (oppCode.match(/{/g) || []).length;
+            
+            const myGrade = Math.min(10, (myCode.length / 200) + (myStyleCount / 2)).toFixed(1);
+            const oppGrade = Math.min(10, (oppCode.length / 200) + (oppStyleCount / 2)).toFixed(1);
+
+            document.getElementById('my-grade').innerText = myGrade;
+            document.getElementById('opp-grade').innerText = oppGrade;
+            document.getElementById('judge-panel').classList.remove('hidden');
+
+            if(parseFloat(myGrade) > parseFloat(oppGrade)) {
+                myWins++;
+                document.getElementById('winner-tag').innerText = "VOCÊ GANHOU O PONTO!";
+                document.getElementById('judge-comment').innerText = "Análise: Seu código apresentou maior riqueza de elementos e estilização mais profunda. Vitória técnica!";
+            } else {
+                oppWins++;
+                document.getElementById('winner-tag').innerText = "OPONENTE GANHOU O PONTO!";
+                document.getElementById('judge-comment').innerText = "Análise: O oponente estruturou melhor os elementos ou utilizou uma folha de estilo mais robusta neste round.";
+            }
+
+            document.getElementById('my-score').innerText = myWins;
+            document.getElementById('opp-score').innerText = oppWins;
+            document.getElementById('btn-judge').classList.add('hidden');
+        }
+
+        function resetUI() {
+            iAmReady = false; opponentReady = false;
+            document.getElementById('editor').value = initialHTML;
+            updatePreview();
+            document.getElementById('blind-overlay').classList.remove('hidden');
+            document.getElementById('result-area').classList.add('hidden');
+            document.getElementById('btn-finish').classList.remove('hidden');
+            document.getElementById('btn-judge').classList.add('hidden');
+            document.getElementById('btn-reset').classList.add('hidden');
+            document.getElementById('judge-panel').classList.add('hidden');
+            startTimer();
+        }
+
+        function resetarJogo(msg) {
+            resetUI();
+            if(msg) {
+                const nt = temas[Math.floor(Math.random()*temas.length)];
+                setTema(nt); conn.send({ type: 'START', tema: nt });
+            }
+        }
+    </script>
+</body>
+          </html>
+          
